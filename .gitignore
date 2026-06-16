@@ -50,3 +50,7 @@ build/patcher/*.pdb
 build/patcher/*.deps.json
 build/patcher/*.xml
 build/patcher/*.config
+
+# Installer build output
+installer/RecBack.Installer/bin/
+installer/RecBack.Installer/obj/
