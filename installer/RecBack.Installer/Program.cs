@@ -168,16 +168,14 @@ async Task<bool> DownloadBuild(string destDir)
         var archiveDir = Path.Combine(installDir, ".archives");
         Directory.CreateDirectory(archiveDir);
 
-        // Download 7z CLI (standalone 7za.exe)
+        // Download 7z CLI (standalone 7za.exe) from our release
         var sevenzaPath = Path.Combine(archiveDir, "7za.exe");
         if (!File.Exists(sevenzaPath))
         {
-            InstallerUI.Info("Downloading 7-Zip CLI...");
+            InstallerUI.Info("Downloading extraction tool...");
             await InstallerUI.DownloadWithProgress(
-                "https://7-zip.org/a/7za920.zip",
-                Path.Combine(archiveDir, "7za.zip"), "  Downloading 7z CLI");
-            ZipFile.ExtractToDirectory(Path.Combine(archiveDir, "7za.zip"), archiveDir);
-            File.Delete(Path.Combine(archiveDir, "7za.zip"));
+                "https://github.com/itsinvin/RecBack/releases/latest/download/7za.exe",
+                sevenzaPath, "  Downloading 7z CLI");
         }
 
         // Download all archive parts
@@ -192,19 +190,28 @@ async Task<bool> DownloadBuild(string destDir)
                 $"  Downloading part {i}/{BuildArchiveParts}");
         }
 
-        // Extract using 7za
-        InstallerUI.Info("Extracting build (this may take a few minutes)...");
+        // Extract using 7za with progress
+        InstallerUI.Info("Extracting build...");
         var firstPart = Path.Combine(archiveDir, $"RecRoom_2023-03-21.7z.001");
         var proc = Process.Start(new ProcessStartInfo
         {
             FileName = sevenzaPath,
-            Arguments = $"x \"{firstPart}\" -o\"{destDir}\" -y",
+            Arguments = $"x \"{firstPart}\" -o\"{destDir}\" -y -bsp1",
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
         })!;
 
+        // Read progress from stdout
+        while (!proc.HasExited)
+        {
+            var line = await proc.StandardOutput.ReadLineAsync();
+            if (line != null && !string.IsNullOrWhiteSpace(line))
+                Console.Write($"\r  {InstallerUI.Color("96")}{line.Trim(),-60}{InstallerUI.Reset()}");
+        }
+        Console.Write(new string(' ', 70) + "\r");
         await proc.WaitForExitAsync();
+
         if (proc.ExitCode != 0)
         {
             var err = await proc.StandardError.ReadToEndAsync();
