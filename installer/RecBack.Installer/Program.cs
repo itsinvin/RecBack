@@ -198,7 +198,7 @@ async Task<bool> DownloadBuild(string destDir)
         var proc = Process.Start(new ProcessStartInfo
         {
             FileName = sevenzaPath,
-            Arguments = $"x \"{firstPart}\" -o\"{destDir}\" -y -bsp1",
+            Arguments = $"x \"{firstPart}\" -o\"{destDir}\" -y",
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
