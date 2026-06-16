@@ -54,3 +54,4 @@ build/patcher/*.config
 # Installer build output
 installer/RecBack.Installer/bin/
 installer/RecBack.Installer/obj/
+installer/publish/
