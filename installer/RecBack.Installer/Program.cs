@@ -9,7 +9,8 @@ const string Version = "1.0.0";
 
 // Where to download the pre-packaged 2023 Rec Room build archive
 // This gets the latest build archive from your GitHub releases
-const string BuildArchiveUrl = "https://github.com/itsinvin/RecBack/releases/latest/download/RecRoom_2023-03-21.zip";
+const string BuildArchiveBase = "https://github.com/itsinvin/RecBack/releases/latest/download/RecRoom_2023-03-21.7z";
+const int BuildArchiveParts = 2;
 
 try { Console.Write(InstallerUI.HideCursor()); } catch { }
 
@@ -164,11 +165,54 @@ async Task<bool> DownloadBuild(string destDir)
 {
     try
     {
-        var archivePath = Path.Combine(installDir, "RecRoom_2023-03-21.zip");
-        await InstallerUI.DownloadWithProgress(BuildArchiveUrl, archivePath, "  Downloading build");
-        InstallerUI.Info("Extracting build...");
-        ZipFile.ExtractToDirectory(archivePath, destDir, overwriteFiles: true);
-        File.Delete(archivePath);
+        var archiveDir = Path.Combine(installDir, ".archives");
+        Directory.CreateDirectory(archiveDir);
+
+        // Download 7z CLI (standalone 7za.exe)
+        var sevenzaPath = Path.Combine(archiveDir, "7za.exe");
+        if (!File.Exists(sevenzaPath))
+        {
+            InstallerUI.Info("Downloading 7-Zip CLI...");
+            await InstallerUI.DownloadWithProgress(
+                "https://7-zip.org/a/7za920.zip",
+                Path.Combine(archiveDir, "7za.zip"), "  Downloading 7z CLI");
+            ZipFile.ExtractToDirectory(Path.Combine(archiveDir, "7za.zip"), archiveDir);
+            File.Delete(Path.Combine(archiveDir, "7za.zip"));
+        }
+
+        // Download all archive parts
+        for (int i = 1; i <= BuildArchiveParts; i++)
+        {
+            var partName = $"RecRoom_2023-03-21.7z.{i:D3}";
+            var partPath = Path.Combine(archiveDir, partName);
+            if (File.Exists(partPath)) continue;
+
+            var partUrl = $"{BuildArchiveBase}.{i:D3}";
+            await InstallerUI.DownloadWithProgress(partUrl, partPath,
+                $"  Downloading part {i}/{BuildArchiveParts}");
+        }
+
+        // Extract using 7za
+        InstallerUI.Info("Extracting build (this may take a few minutes)...");
+        var firstPart = Path.Combine(archiveDir, $"RecRoom_2023-03-21.7z.001");
+        var proc = Process.Start(new ProcessStartInfo
+        {
+            FileName = sevenzaPath,
+            Arguments = $"x \"{firstPart}\" -o\"{destDir}\" -y -bsp1",
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        })!;
+
+        await proc.WaitForExitAsync();
+        if (proc.ExitCode != 0)
+        {
+            var err = await proc.StandardError.ReadToEndAsync();
+            throw new Exception($"7z extraction failed (exit {proc.ExitCode}): {err}");
+        }
+
+        // Cleanup
+        Directory.Delete(archiveDir, recursive: true);
         return true;
     }
     catch (Exception ex)
