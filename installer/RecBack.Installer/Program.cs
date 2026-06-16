@@ -1,24 +1,23 @@
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using RecBack.Installer;
 
 Console.OutputEncoding = System.Text.Encoding.UTF8;
 
 const string Version = "1.0.0";
-const string ManifestId = "7490748483298966814";
 
-var rand = new Random();
-try { Console.Write(InstallerUI.HideCursor()); }
-catch { }
+// Where to download the pre-packaged 2023 Rec Room build archive
+// This gets the latest build archive from your GitHub releases
+const string BuildArchiveUrl = "https://github.com/itsinvin/RecBack/releases/latest/download/RecRoom_2023-03-21.zip";
+
+try { Console.Write(InstallerUI.HideCursor()); } catch { }
 
 await InstallerUI.AnimateLogo();
-await InstallerUI.AnimateText("Welcome to RecBack - The Rec Room Revival Project!", 15);
+await InstallerUI.AnimateText("Welcome to RecBack - The Rec Room Revival Project!");
 await Task.Delay(300);
 
-try { Console.Write(InstallerUI.ShowCursor()); }
-catch { }
+try { Console.Write(InstallerUI.ShowCursor()); } catch { }
 
 // ─── Step 1: Install Directory ───
 Console.WriteLine();
@@ -32,64 +31,49 @@ Directory.CreateDirectory(installDir);
 var gameDir = Path.Combine(installDir, "game");
 
 InstallerUI.Success($"Will install to: {installDir}");
-await Task.Delay(500);
-
-// ─── Step 2: Check for updates ───
-Console.WriteLine();
-InstallerUI.Step(2, "Checking for RecBack updates");
-await CheckForUpdates();
 await Task.Delay(300);
 
-// ─── Step 3: Get the game build ───
+// ─── Step 2: Download the build ───
 Console.WriteLine();
-InstallerUI.Step(3, "Get a Rec Room build");
+InstallerUI.Step(2, "Download Rec Room 2023 build");
 
-var buildExe = FindBuildExe(gameDir);
-if (buildExe != null)
+Directory.CreateDirectory(gameDir);
+
+var existingExe = FindBuildExe(gameDir);
+if (existingExe != null)
 {
-    InstallerUI.Success($"Found existing build: {Path.GetFileName(buildExe)}");
-    if (!InstallerUI.PromptYesNo("Re-download/install a different build?", false))
-        goto step4;
-    buildExe = null;
+    InstallerUI.Success($"Found existing build: {Path.GetFileName(existingExe)}");
+    if (!InstallerUI.PromptYesNo("Re-download?", false))
+        goto installBepInEx;
 }
 
-if (buildExe == null)
+InstallerUI.Info("Downloading Rec Room 21 March 2023 build (~5-10 GB)...");
+InstallerUI.Warn("This is a large download and may take a while.");
+
+if (!await DownloadBuild(gameDir))
 {
-    Directory.CreateDirectory(gameDir);
-
-    if (InstallerUI.PromptYesNo("Download a 2023 Rec Room build from Steam?"))
-        await RunDepotDownloader(gameDir);
-
-    buildExe = FindBuildExe(gameDir);
+    InstallerUI.Error("Build download failed. Make sure the archive exists in GitHub Releases.");
+    Console.WriteLine($"\n  {InstallerUI.Dim()}Press Enter to exit...{InstallerUI.Reset()}");
+    Console.ReadLine();
+    return;
 }
 
-if (buildExe == null)
+existingExe = FindBuildExe(gameDir);
+if (existingExe == null)
 {
-    InstallerUI.Warn("No build found. You can:");
-    InstallerUI.Info($"1. Copy a 2023 build into: {gameDir}");
-    InstallerUI.Info("2. Run the installer again after placing a build there");
-
-    var existing = @"C:\Users\invin\Downloads\BLANKRENAMETHIS";
-    if (Directory.Exists(existing) && InstallerUI.PromptYesNo("Copy your existing BLANKRENAMETHIS build?"))
-    {
-        CopyDirectory(existing, gameDir);
-        buildExe = FindBuildExe(gameDir);
-        if (buildExe != null) InstallerUI.Success("Build copied!");
-    }
-
-    if (buildExe == null)
-    {
-        InstallerUI.Error("No build available. Please add one manually and re-run.");
-        Console.WriteLine($"\n  {InstallerUI.Dim()}Press Enter to exit...{InstallerUI.Reset()}");
-        Console.ReadLine();
-        return;
-    }
+    InstallerUI.Error("Build downloaded but no executable found. The archive may be incorrect.");
+    Console.WriteLine($"\n  {InstallerUI.Dim()}Press Enter to exit...{InstallerUI.Reset()}");
+    Console.ReadLine();
+    return;
 }
 
-// ─── Step 4: Configure Server IP ───
-step4:
+InstallerUI.Success($"Build ready: {Path.GetFileName(existingExe)}");
+await Task.Delay(300);
+
+// ─── Step 3: Configure Server ───
+installBepInEx:
 Console.WriteLine();
-InstallerUI.Step(4, "Configure your RecBack server");
+InstallerUI.Step(3, "Configure your RecBack server");
 
 var local = InstallerUI.PromptYesNo("Running server on this machine?", true);
 var serverIp = InstallerUI.Prompt("RecBack server IP address", local ? "localhost" : "192.168.1.100");
@@ -98,32 +82,21 @@ var serverPort = InstallerUI.Prompt("Server port (NameServer)", "9999");
 InstallerUI.Success($"Server: {serverIp}:{serverPort}");
 await Task.Delay(300);
 
-// ─── Step 5: Install BepInEx + Doorstop ───
+// ─── Step 4: Install BepInEx + Doorstop ───
 Console.WriteLine();
-InstallerUI.Step(5, "Install BepInEx mod loader");
+InstallerUI.Step(4, "Install BepInEx mod loader");
 
 var bepinexDir = Path.Combine(installDir, "bepinex");
 Directory.CreateDirectory(bepinexDir);
 
-var bepInExCore = Path.Combine(bepinexDir, "BepInEx", "core", "BepInEx.Core.dll");
-if (!File.Exists(bepInExCore))
+if (!File.Exists(Path.Combine(bepinexDir, "BepInEx", "core", "BepInEx.Core.dll")))
 {
-    await InstallerUI.Spinner(500, "Preparing BepInEx download");
     if (!await DownloadBepInEx(bepinexDir))
     {
-        var bundled = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "bepinex");
-        if (Directory.Exists(bundled))
-        {
-            InstallerUI.Info("Using bundled BepInEx...");
-            CopyDirectory(bundled, bepinexDir);
-        }
-        else
-        {
-            InstallerUI.Error("BepInEx not available. Download manually from github.com/BepInEx/BepInEx");
-            Console.WriteLine($"\n  {InstallerUI.Dim()}Press Enter to exit...{InstallerUI.Reset()}");
-            Console.ReadLine();
-            return;
-        }
+        InstallerUI.Error("BepInEx download failed.");
+        Console.WriteLine($"\n  {InstallerUI.Dim()}Press Enter to exit...{InstallerUI.Reset()}");
+        Console.ReadLine();
+        return;
     }
 }
 else
@@ -137,9 +110,9 @@ if (SetupDoorstop(gameDir, bepinexDir))
 else
     InstallerUI.Error("Failed to configure Doorstop");
 
-// ─── Step 6: Install RecBack Patcher ───
+// ─── Step 5: Install Patcher Plugin ───
 Console.WriteLine();
-InstallerUI.Step(6, "Install RecBack patches");
+InstallerUI.Step(5, "Install RecBack patches");
 
 var pluginsDir = Path.Combine(gameDir, "BepInEx", "plugins");
 Directory.CreateDirectory(pluginsDir);
@@ -154,19 +127,15 @@ if (patcherDll != null)
 else
 {
     InstallerUI.Warn("Patcher DLL not bundled. Install manually from GitHub releases.");
-    var configDir = Path.Combine(gameDir, "BepInEx", "config");
-    Directory.CreateDirectory(configDir);
-    await File.WriteAllTextAsync(Path.Combine(configDir, "recback.patches.cfg"),
-        $"[Nameserver]\nTarget = {serverIp}:{serverPort}\n");
-    InstallerUI.Info("Config file created. Place RecBack.Patcher.dll in BepInEx/plugins/");
+    InstallerUI.Info("Download from: https://github.com/itsinvin/RecBack/releases");
 }
 
-// ─── Step 7: Create Launchers ───
+// ─── Step 6: Create Launchers ───
 Console.WriteLine();
-InstallerUI.Step(7, "Create launchers");
+InstallerUI.Step(6, "Create launchers");
 
-buildExe = FindBuildExe(gameDir) ?? "";
-CreateLaunchers(gameDir, buildExe);
+existingExe = FindBuildExe(gameDir) ?? "";
+CreateLaunchers(gameDir, existingExe);
 CreateSteamAppId(gameDir);
 
 await Task.Delay(300);
@@ -182,7 +151,7 @@ InstallerUI.Info("1. Start the server:  dotnet run --project server/RecBack.Serv
 InstallerUI.Info("2. Or on NAS:         docker compose up -d");
 InstallerUI.Info($"3. Launch the game:   {Path.Combine(gameDir, "RecBack_ScreenMode.bat")}");
 Console.WriteLine();
-InstallerUI.Warn("The first launch may take a while as BepInEx generates interop assemblies.");
+InstallerUI.Warn("First launch takes a while as BepInEx generates interop assemblies.");
 Console.WriteLine();
 Console.Write($"  {InstallerUI.Dim()}Press Enter to exit...{InstallerUI.Reset()}");
 Console.ReadLine();
@@ -191,127 +160,22 @@ Console.ReadLine();
 // Local Functions
 // ═══════════════════════════════════════════════════════════════════
 
-async Task CheckForUpdates()
+async Task<bool> DownloadBuild(string destDir)
 {
-    InstallerUI.Info("Checking for updates...");
-    await InstallerUI.Spinner(1000, "Checking GitHub");
-
     try
     {
-        using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("RecBack-Installer/1.0");
-        client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github.v3+json");
-
-        var resp = await client.GetAsync("https://api.github.com/repos/itsinvin/RecBack/releases/latest");
-        if (!resp.IsSuccessStatusCode) return;
-
-        var json = await resp.Content.ReadAsStringAsync();
-        var doc = JsonDocument.Parse(json);
-        var tag = doc.RootElement.GetProperty("tag_name").GetString() ?? "";
-
-        if (!string.IsNullOrEmpty(tag) && tag.TrimStart('v') != Version)
-        {
-            InstallerUI.Warn($"RecBack {tag} is available! You have v{Version}");
-            if (InstallerUI.PromptYesNo("Download the latest version from GitHub?"))
-            {
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = "https://github.com/itsinvin/RecBack/releases/latest",
-                    UseShellExecute = true
-                });
-            }
-        }
+        var archivePath = Path.Combine(installDir, "RecRoom_2023-03-21.zip");
+        await InstallerUI.DownloadWithProgress(BuildArchiveUrl, archivePath, "  Downloading build");
+        InstallerUI.Info("Extracting build...");
+        ZipFile.ExtractToDirectory(archivePath, destDir, overwriteFiles: true);
+        File.Delete(archivePath);
+        return true;
     }
-    catch
+    catch (Exception ex)
     {
-        InstallerUI.Info("Could not check for updates (offline or no release yet)");
+        InstallerUI.Error($"Build download failed: {ex.Message}");
+        return false;
     }
-}
-
-async Task RunDepotDownloader(string destDir)
-{
-    InstallerUI.Info("You need a 2023 Rec Room build from Steam.");
-    InstallerUI.Info("RecBack can use DepotDownloader to get it.");
-
-    var ddDir = Path.Combine(installDir, "depotdownloader");
-    var ddExe = Path.Combine(ddDir, "DepotDownloader.exe");
-
-    if (!File.Exists(ddExe))
-    {
-        InstallerUI.Info("Downloading DepotDownloader...");
-        Directory.CreateDirectory(ddDir);
-
-        var ddUrl = "https://github.com/SteamRE/DepotDownloader/releases/latest/download/DepotDownloader-win-x64.zip";
-        var ddZip = Path.Combine(installDir, "DepotDownloader.zip");
-
-        await InstallerUI.DownloadWithProgress(ddUrl, ddZip, "  Downloading DepotDownloader");
-
-        InstallerUI.Info("Extracting DepotDownloader...");
-        ZipFile.ExtractToDirectory(ddZip, ddDir, overwriteFiles: true);
-        File.Delete(ddZip);
-    }
-
-    if (!File.Exists(ddExe))
-    {
-        InstallerUI.Error("DepotDownloader executable not found");
-        return;
-    }
-
-    Console.WriteLine();
-    InstallerUI.Info("Rec Room Steam App ID: 471710");
-    InstallerUI.Info("Depot ID: 471711 (Rec Room main content)");
-    InstallerUI.Warn("You need a Steam account that owns Rec Room.");
-
-    var username = InstallerUI.Prompt("Steam username");
-    if (string.IsNullOrEmpty(username))
-    {
-        InstallerUI.Error("Steam username required");
-        return;
-    }
-
-    var password = InstallerUI.PromptPassword("Steam password");
-    if (string.IsNullOrEmpty(password))
-    {
-        InstallerUI.Error("Steam password required");
-        return;
-    }
-
-    var manifestId = InstallerUI.Prompt("2023 build manifest ID (from SteamDB)", ManifestId);
-
-    Console.WriteLine();
-    InstallerUI.Info("Downloading Rec Room 2023 build...");
-    InstallerUI.Warn("This will download ~5-10 GB. It may take a while.");
-
-    var psi = new ProcessStartInfo(ddExe)
-    {
-        Arguments = $"-app 471710 -depot 471711 -manifest {manifestId} -username \"{username}\" -password \"{password}\" -dir \"{destDir}\"",
-        UseShellExecute = false,
-        RedirectStandardOutput = true,
-        RedirectStandardError = true,
-        CreateNoWindow = true
-    };
-
-    var proc = new Process { StartInfo = psi };
-    proc.OutputDataReceived += (_, e) =>
-    {
-        if (!string.IsNullOrEmpty(e.Data))
-            Console.WriteLine($"  {InstallerUI.Dim()}{e.Data}{InstallerUI.Reset()}");
-    };
-    proc.ErrorDataReceived += (_, e) =>
-    {
-        if (!string.IsNullOrEmpty(e.Data))
-            Console.WriteLine($"  {InstallerUI.Color("91")}{e.Data}{InstallerUI.Reset()}");
-    };
-
-    proc.Start();
-    proc.BeginOutputReadLine();
-    proc.BeginErrorReadLine();
-    await proc.WaitForExitAsync();
-
-    if (proc.ExitCode == 0)
-        InstallerUI.Success("Build downloaded!");
-    else
-        InstallerUI.Error($"DepotDownloader failed with exit code {proc.ExitCode}");
 }
 
 async Task<bool> DownloadBepInEx(string destDir)
@@ -332,25 +196,20 @@ async Task<bool> DownloadBepInEx(string destDir)
 
         string? zipUrl = null;
         foreach (var release in doc.RootElement.EnumerateArray())
-        {
             foreach (var asset in release.GetProperty("assets").EnumerateArray())
             {
                 var name = asset.GetProperty("name").GetString() ?? "";
-                if (name.Contains("win", StringComparison.OrdinalIgnoreCase) &&
-                    name.Contains("x64", StringComparison.OrdinalIgnoreCase) &&
-                    name.Contains("il2cpp", StringComparison.OrdinalIgnoreCase))
+                if (name.Contains("win") && name.Contains("x64") && name.Contains("il2cpp"))
                 {
                     zipUrl = asset.GetProperty("browser_download_url").GetString();
                     break;
                 }
+                if (zipUrl != null) break;
             }
-            if (zipUrl != null) break;
-        }
 
         zipUrl ??= "https://github.com/BepInEx/BepInEx/releases/download/v6.0.0-pre.1/BepInEx_Unity_IL2CPP_x64_6.0.0-pre.1.zip";
 
         var zipPath = Path.Combine(installDir, "bepinex.zip");
-        InstallerUI.Info($"Downloading BepInEx...");
         await InstallerUI.DownloadWithProgress(zipUrl, zipPath, "  Downloading BepInEx");
 
         InstallerUI.Info("Extracting BepInEx...");
@@ -371,8 +230,7 @@ bool SetupDoorstop(string gameDir, string bepinexDir)
 {
     try
     {
-        var configPath = Path.Combine(gameDir, "doorstop_config.ini");
-        File.WriteAllText(configPath, @"# RecBack Doorstop Configuration
+        File.WriteAllText(Path.Combine(gameDir, "doorstop_config.ini"), @"# RecBack Doorstop Configuration
 [General]
 enabled = true
 target_assembly = BepInEx\core\BepInEx.Unity.IL2CPP.dll
@@ -417,7 +275,7 @@ void InstallPatcherPlugin(string gameDir, string patcherDll, string serverAddr)
     var configDir = Path.Combine(gameDir, "BepInEx", "config");
     Directory.CreateDirectory(configDir);
     File.WriteAllText(Path.Combine(configDir, "recback.patches.cfg"),
-        $"## RecBack Patcher Configuration\n[Nameserver]\n## Set this to your RecBack server IP:port\nTarget = {serverAddr}\n");
+        $"## RecBack Patcher Configuration\n[Nameserver]\nTarget = {serverAddr}\n");
 }
 
 void CreateLaunchers(string gameDir, string exePath)
@@ -426,7 +284,6 @@ void CreateLaunchers(string gameDir, string exePath)
 
     File.WriteAllText(Path.Combine(gameDir, "RecBack_ScreenMode.bat"),
         $"@echo off\ntitle RecBack - Screen Mode\necho Starting RecBack...\nstart \"\" \"{exeName}\" +mode:screen\nexit\n");
-
     File.WriteAllText(Path.Combine(gameDir, "RecBack_VR.bat"),
         $"@echo off\ntitle RecBack - VR Mode\necho Starting RecBack...\nstart \"\" \"{exeName}\" +mode:vr\nexit\n");
 
@@ -460,9 +317,8 @@ string? FindPatcherDll()
 {
     var paths = new[]
     {
-        Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "build", "patcher", "RecBack.Patcher.dll"),
         Path.Combine(AppContext.BaseDirectory, "RecBack.Patcher.dll"),
-        Path.Combine(installDir, "RecBack.Patcher.dll"),
+        Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "build", "patcher", "RecBack.Patcher.dll"),
     };
     foreach (var p in paths)
     {
