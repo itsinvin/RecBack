@@ -1,11 +1,11 @@
-FROM mcr.microsoft.com/dotnet/sdk:8.0-bookworm-slim-arm64v8 AS build
+FROM --platform=linux/arm64 mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 COPY server/RecBack.Server/RecBack.Server.csproj .
-RUN dotnet restore
+RUN dotnet restore -r linux-arm64
 COPY server/RecBack.Server/ .
-RUN dotnet publish -c Release -o /app -r linux-arm64 --self-contained false
+RUN dotnet publish -c Release -o /app -r linux-arm64 --self-contained false --no-restore
 
-FROM mcr.microsoft.com/dotnet/runtime:8.0-bookworm-slim-arm64v8
+FROM --platform=linux/arm64 mcr.microsoft.com/dotnet/runtime:8.0
 WORKDIR /app
 COPY --from=build /app .
 EXPOSE 9999 2018 20182 20161

@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: recback-server:latest
+    image: ghcr.io/itsinvin/recback-server:latest
     container_name: recback
     restart: unless-stopped
     ports:
