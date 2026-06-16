@@ -233,30 +233,7 @@ async Task<bool> DownloadBepInEx(string destDir)
 
     try
     {
-        using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("RecBack-Installer/1.0");
-        client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github.v3+json");
-
-        var resp = await client.GetAsync("https://api.github.com/repos/BepInEx/BepInEx/releases");
-        if (!resp.IsSuccessStatusCode) return false;
-
-        var json = await resp.Content.ReadAsStringAsync();
-        using var doc = JsonDocument.Parse(json);
-
-        string? zipUrl = null;
-        foreach (var release in doc.RootElement.EnumerateArray())
-            foreach (var asset in release.GetProperty("assets").EnumerateArray())
-            {
-                var name = asset.GetProperty("name").GetString() ?? "";
-                if (name.Contains("win") && name.Contains("x64") && name.Contains("il2cpp"))
-                {
-                    zipUrl = asset.GetProperty("browser_download_url").GetString();
-                    break;
-                }
-                if (zipUrl != null) break;
-            }
-
-        zipUrl ??= "https://github.com/BepInEx/BepInEx/releases/download/v6.0.0-pre.1/BepInEx_Unity_IL2CPP_x64_6.0.0-pre.1.zip";
+        var zipUrl = "https://github.com/BepInEx/BepInEx/releases/download/v6.0.0-pre.2/BepInEx-Unity.IL2CPP-win-x64-6.0.0-pre.2.zip";
 
         var zipPath = Path.Combine(installDir, "bepinex.zip");
         await InstallerUI.DownloadWithProgress(zipUrl, zipPath, "  Downloading BepInEx");
