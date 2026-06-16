@@ -165,18 +165,16 @@ async Task<bool> DownloadBuild(string destDir)
 {
     try
     {
-        var archiveDir = Path.Combine(installDir, ".archives");
+        // Fresh temp directory for extraction tools
+        var archiveDir = Path.Combine(Path.GetTempPath(), "RecBack-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(archiveDir);
 
         // Download 7z CLI (standalone 7za.exe) from our release
         var sevenzaPath = Path.Combine(archiveDir, "7za.exe");
-        if (!File.Exists(sevenzaPath))
-        {
-            InstallerUI.Info("Downloading extraction tool...");
-            await InstallerUI.DownloadWithProgress(
-                "https://github.com/itsinvin/RecBack/releases/latest/download/7za.exe",
-                sevenzaPath, "  Downloading 7z CLI");
-        }
+        InstallerUI.Info("Downloading extraction tool...");
+        await InstallerUI.DownloadWithProgress(
+            "https://github.com/itsinvin/RecBack/releases/latest/download/7za.exe",
+            sevenzaPath, "  Downloading 7z CLI");
 
         // Download all archive parts
         for (int i = 1; i <= BuildArchiveParts; i++)
