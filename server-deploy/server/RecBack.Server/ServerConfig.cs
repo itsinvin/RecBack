@@ -4,11 +4,11 @@ public class ServerConfig
 {
     public string NameserverHost { get; set; } = "0.0.0.0";
     public int NameserverPort { get; set; } = 9999;
-    public string ApiHost { get; set; } = "0.0.0.0";
+    public string ApiHost { get; set; } = "*";
     public int ApiPort { get; set; } = 2018;
-    public string ImageHost { get; set; } = "0.0.0.0";
+    public string ImageHost { get; set; } = "*";
     public int ImagePort { get; set; } = 20182;
-    public string NotifyHost { get; set; } = "0.0.0.0";
+    public string NotifyHost { get; set; } = "*";
     public int NotifyPort { get; set; } = 20161;
     public string ExternalIp { get; set; } = "localhost";
     public string DataDir { get; set; } = "data";
