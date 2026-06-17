@@ -118,17 +118,20 @@ InstallerUI.Step(5, "Install RecBack patches");
 var pluginsDir = Path.Combine(gameDir, "BepInEx", "plugins");
 Directory.CreateDirectory(pluginsDir);
 
-var patcherDll = FindPatcherDll();
-if (patcherDll != null)
+var patcherDll = Path.Combine(installDir, "RecBack.Patcher.dll");
+if (!File.Exists(patcherDll))
+{
+    InstallerUI.Info("Downloading patcher plugin...");
+    await InstallerUI.DownloadWithProgress(
+        "https://github.com/itsinvin/RecBack/releases/latest/download/RecBack.Patcher.dll",
+        patcherDll, "  Downloading patcher");
+}
+
+if (File.Exists(patcherDll))
 {
     await InstallerUI.Spinner(300, "Installing patcher plugin");
     InstallPatcherPlugin(gameDir, patcherDll, $"{serverIp}:{serverPort}");
     InstallerUI.Success("RecBack Patcher plugin installed");
-}
-else
-{
-    InstallerUI.Warn("Patcher DLL not bundled. Install manually from GitHub releases.");
-    InstallerUI.Info("Download from: https://github.com/itsinvin/RecBack/releases");
 }
 
 // ─── Step 6: Create Launchers ───
@@ -335,21 +338,6 @@ string? FindBuildExe(string directory)
         var name = Path.GetFileNameWithoutExtension(f).ToLowerInvariant();
         if (name.Contains("rec") || name.Contains("room"))
             return f;
-    }
-    return null;
-}
-
-string? FindPatcherDll()
-{
-    var paths = new[]
-    {
-        Path.Combine(AppContext.BaseDirectory, "RecBack.Patcher.dll"),
-        Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "build", "patcher", "RecBack.Patcher.dll"),
-    };
-    foreach (var p in paths)
-    {
-        var full = Path.GetFullPath(p);
-        if (File.Exists(full)) return full;
     }
     return null;
 }
